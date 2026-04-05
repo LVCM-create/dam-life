@@ -1,0 +1,31 @@
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #e8f2fb;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.app {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+#gameCanvas {
+  display: block;
+  max-width: min(100%, 800px);
+  height: auto;
+  border: 2px solid #2e4a3d;
+  background: #d8ecff;
+}
