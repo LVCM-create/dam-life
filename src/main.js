@@ -1,10 +1,13 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-const INITIAL_PLAYER_X = canvas.width / 2;
-const INITIAL_PLAYER_Y = canvas.height / 2;
+const HOME_X = canvas.width / 2;
+const HOME_Y = canvas.height / 2;
+const INITIAL_PLAYER_X = HOME_X + 28;
+const INITIAL_PLAYER_Y = HOME_Y + 10;
 const INITIAL_PREDATOR_X = 80;
 const INITIAL_PREDATOR_Y = 80;
+const PREDATOR_AWARENESS_DELAY = 2.5;
 
 const input = createInputState();
 const player = createPlayer(INITIAL_PLAYER_X, INITIAL_PLAYER_Y);
@@ -15,7 +18,8 @@ let waterLevel = 0;
 let targetWaterLevel = 0;
 let gameOver = false;
 let hasWon = false;
-let blockedDuration = 0;
+let winHoldDuration = 0;
+let predatorAwarenessTimer = 0;
 
 let lastTime = performance.now();
 
@@ -124,8 +128,10 @@ function update(deltaTime) {
     moveY *= diagonalScale;
   }
 
-  player.x += moveX * player.speed * deltaTime;
-  player.y += moveY * player.speed * deltaTime;
+  const terrainSpeedMultiplier = getBeaverTerrainSpeedMultiplier();
+  const beaverSpeed = player.speed * terrainSpeedMultiplier;
+  player.x += moveX * beaverSpeed * deltaTime;
+  player.y += moveY * beaverSpeed * deltaTime;
 
   const halfSize = player.size / 2;
   player.x = clamp(player.x, halfSize, canvas.width - halfSize);
@@ -147,15 +153,25 @@ function update(deltaTime) {
   updateWaterLevel(deltaTime);
 }
 
+function getBeaverTerrainSpeedMultiplier() {
+  const pond = getPondGeometry();
+  const distanceFromLodge = getDistanceFromPondCenter(player.x, player.y, pond);
+  const isInPond = distanceFromLodge <= pond.outerRadius;
+
+  if (isInPond) return 1;
+  return 0.45;
+}
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   drawGround();
+  drawWaterOverlay();
+  drawLodge();
   drawDamTiles();
   drawTrees();
   drawPlayer();
   drawPredator();
-  drawWaterOverlay();
   drawHud();
 
   if (gameOver) {
@@ -221,6 +237,23 @@ function drawHud() {
   ctx.fillText(`Water: ${waterLevel.toFixed(1)}`, 16, 66);
 }
 
+function drawLodge() {
+  const lodgeWidth = 44;
+  const lodgeHeight = 32;
+  const lodgeX = HOME_X - lodgeWidth / 2;
+  const lodgeY = HOME_Y - lodgeHeight / 2;
+
+  ctx.fillStyle = "#6c4a2a";
+  ctx.fillRect(lodgeX, lodgeY, lodgeWidth, lodgeHeight);
+
+  ctx.fillStyle = "#2a1b11";
+  ctx.fillRect(HOME_X - 7, HOME_Y - 3, 14, 19);
+
+  ctx.strokeStyle = "#3b2718";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(lodgeX, lodgeY, lodgeWidth, lodgeHeight);
+}
+
 function gameLoop(timestamp) {
   const deltaTime = (timestamp - lastTime) / 1000;
   lastTime = timestamp;
@@ -258,20 +291,45 @@ function moveTowards(current, target, maxStep) {
 }
 
 function drawWaterOverlay() {
-  const waterRatio = waterLevel / getMaxWaterLevel();
-  const waterHeight = canvas.height * waterRatio;
+  const pond = getPondGeometry();
 
-  if (waterHeight <= 0) return;
+  // Slightly oval pond for a simple, readable "pond" look.
+  ctx.save();
+  ctx.translate(pond.centerX, pond.centerY);
+  ctx.scale(1, 0.8);
 
-  ctx.fillStyle = "rgba(30, 120, 220, 0.35)";
-  ctx.fillRect(0, canvas.height - waterHeight, canvas.width, waterHeight);
+  drawPondZone(pond.outerRadius, "rgba(126, 196, 244, 0.6)");
+  drawPondZone(pond.middleRadius, "rgba(61, 143, 213, 0.65)");
+  drawPondZone(pond.innerRadius, "rgba(28, 90, 164, 0.72)");
 
-  ctx.strokeStyle = "rgba(20, 90, 180, 0.8)";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(16, 71, 133, 0.9)";
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(0, canvas.height - waterHeight);
-  ctx.lineTo(canvas.width, canvas.height - waterHeight);
+  ctx.arc(0, 0, pond.outerRadius, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawPondZone(radius, color) {
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function getPondGeometry() {
+  const waterRatio = clamp(waterLevel / getMaxWaterLevel(), 0, 1);
+  const baseRadius = 95;
+  const outerRadius = baseRadius + waterRatio * 190;
+
+  return {
+    centerX: HOME_X,
+    centerY: HOME_Y,
+    yScale: 0.8,
+    outerRadius,
+    middleRadius: outerRadius * 0.68,
+    innerRadius: outerRadius * 0.4,
+  };
 }
 
 function drawGameOverMessage() {
@@ -341,10 +399,26 @@ function tryPlaceDamTile() {
 }
 
 function updatePredator(deltaTime) {
-  const waterEffect = getPredatorWaterEffect();
-  predator.state = waterEffect.state;
+  if (predatorAwarenessTimer < PREDATOR_AWARENESS_DELAY) {
+    predatorAwarenessTimer += deltaTime;
+    predator.state = "idle";
+    return;
+  }
 
-  if (waterEffect.speedMultiplier <= 0) return;
+  const pond = getPondGeometry();
+  const currentDistanceFromLodge = getDistanceFromPondCenter(predator.x, predator.y, pond);
+
+  // Safety clamp: if predator somehow starts inside deep water, keep it on the boundary.
+  if (currentDistanceFromLodge < pond.innerRadius) {
+    const safePosition = projectPointToPondRadius(predator.x, predator.y, pond, pond.innerRadius + 0.1);
+    predator.x = safePosition.x;
+    predator.y = safePosition.y;
+    predator.state = "blocked";
+    return;
+  }
+
+  const pondZone = getPredatorPondZone();
+  predator.state = pondZone.state;
 
   const dx = player.x - predator.x;
   const dy = player.y - predator.y;
@@ -354,33 +428,71 @@ function updatePredator(deltaTime) {
 
   const dirX = dx / distance;
   const dirY = dy / distance;
-  const effectiveSpeed = predator.speed * waterEffect.speedMultiplier;
-  predator.x += dirX * effectiveSpeed * deltaTime;
-  predator.y += dirY * effectiveSpeed * deltaTime;
+  const effectiveSpeed = predator.speed * pondZone.speedMultiplier;
+  const nextX = predator.x + dirX * effectiveSpeed * deltaTime;
+  const nextY = predator.y + dirY * effectiveSpeed * deltaTime;
+  const nextDistanceFromLodge = getDistanceFromPondCenter(nextX, nextY, pond);
+
+  // Deep zone is forbidden: stop at the deep boundary rather than entering.
+  if (nextDistanceFromLodge < pond.innerRadius) {
+    const boundaryPosition = projectPointToPondRadius(nextX, nextY, pond, pond.innerRadius + 0.1);
+    predator.x = boundaryPosition.x;
+    predator.y = boundaryPosition.y;
+    predator.state = "blocked";
+  } else {
+    predator.x = nextX;
+    predator.y = nextY;
+  }
 
   const halfSize = predator.size / 2;
   predator.x = clamp(predator.x, halfSize, canvas.width - halfSize);
   predator.y = clamp(predator.y, halfSize, canvas.height - halfSize);
 }
 
-function getPredatorWaterEffect() {
-  const mediumWaterThreshold = 35;
-  const highWaterThreshold = 55;
+function getPredatorPondZone() {
+  const pond = getPondGeometry();
+  const distanceFromLodge = getDistanceFromPondCenter(predator.x, predator.y, pond);
 
-  if (waterLevel >= highWaterThreshold) {
+  if (distanceFromLodge <= pond.innerRadius) {
     return { state: "blocked", speedMultiplier: 0 };
   }
 
-  if (waterLevel >= mediumWaterThreshold) {
-    return { state: "slowed", speedMultiplier: 0.45 };
+  if (distanceFromLodge <= pond.middleRadius) {
+    return { state: "medium", speedMultiplier: 0.55 };
+  }
+
+  if (distanceFromLodge <= pond.outerRadius) {
+    return { state: "shallow", speedMultiplier: 0.75 };
   }
 
   return { state: "normal", speedMultiplier: 1 };
 }
 
+function getDistanceFromPondCenter(x, y, pond) {
+  const dx = x - pond.centerX;
+  const dy = (y - pond.centerY) / pond.yScale;
+  return Math.hypot(dx, dy);
+}
+
+function projectPointToPondRadius(px, py, pond, radius) {
+  const dx = px - pond.centerX;
+  const dy = py - pond.centerY;
+  const normalizedDy = dy / pond.yScale;
+  const distance = Math.hypot(dx, normalizedDy);
+
+  if (distance <= 0.0001) {
+    return { x: pond.centerX + radius, y: pond.centerY };
+  }
+
+  const scale = radius / distance;
+  return { x: pond.centerX + dx * scale, y: pond.centerY + dy * scale };
+}
+
 function getPredatorColor() {
+  if (predator.state === "idle") return "#9ca3af";
   if (predator.state === "blocked") return "#6b7280";
-  if (predator.state === "slowed") return "#d97706";
+  if (predator.state === "medium") return "#1f7a8f";
+  if (predator.state === "shallow") return "#d97706";
   return predator.color;
 }
 
@@ -396,16 +508,18 @@ function checkGameOver() {
 function updateWinCondition(deltaTime) {
   if (gameOver) return;
 
-  const requiredBlockedDuration = 5;
-  if (predator.state === "blocked") {
-    blockedDuration += deltaTime;
-    if (blockedDuration >= requiredBlockedDuration) {
+  const pond = getPondGeometry();
+  const requiredPondRadius = 262;
+  const requiredHoldDuration = 4;
+
+  if (pond.outerRadius >= requiredPondRadius) {
+    winHoldDuration += deltaTime;
+    if (winHoldDuration >= requiredHoldDuration) {
       hasWon = true;
     }
-    return;
+  } else {
+    winHoldDuration = 0;
   }
-
-  blockedDuration = 0;
 }
 
 function restartGame() {
@@ -424,7 +538,8 @@ function restartGame() {
   targetWaterLevel = 0;
   gameOver = false;
   hasWon = false;
-  blockedDuration = 0;
+  winHoldDuration = 0;
+  predatorAwarenessTimer = 0;
   clearInputState();
   lastTime = performance.now();
 }
