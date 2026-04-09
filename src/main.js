@@ -1,3 +1,5 @@
+import { clamp, moveTowards, snapToGrid, getDistance } from "./utils.js";
+
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
@@ -760,9 +762,6 @@ function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
 
 function updateWaterLevel(deltaTime) {
   targetWaterLevel = getTargetWaterLevel();
@@ -780,11 +779,7 @@ function getMaxWaterLevel() {
   return 100;
 }
 
-function moveTowards(current, target, maxStep) {
-  if (current < target) return Math.min(current + maxStep, target);
-  if (current > target) return Math.max(current - maxStep, target);
-  return current;
-}
+
 
 function drawWaterOverlay() {
   const pond = getPondGeometry();
@@ -1130,13 +1125,6 @@ function clearInputState() {
   input.buildRequested = false;
 }
 
-function snapToGrid(value, gridSize) {
-  return Math.round(value / gridSize) * gridSize;
-}
-
-function getDistance(ax, ay, bx, by) {
-  return Math.hypot(ax - bx, ay - by);
-}
 
 function ensureAudioStarted() {
   if (!audioContext) {
