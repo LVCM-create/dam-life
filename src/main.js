@@ -1,3 +1,5 @@
+import { createPredator, drawPredator } from "./predator.js";
+import { createPlayer, drawPlayer } from "./player.js";
 import { clamp, moveTowards, snapToGrid, getDistance } from "./utils.js";
 
 const canvas = document.getElementById("gameCanvas");
@@ -59,30 +61,6 @@ function createInputState() {
   };
 }
 
-function createPlayer(x, y) {
-  return {
-    x,
-    y,
-    size: 28,
-    speed: 220,
-    color: "#7b4b2a",
-    facingX: 1,
-    tilt: 0,
-    targetTilt: 0,
-    pickupPulseTimer: 0,
-  };
-}
-
-function createPredator(x, y) {
-  return {
-    x,
-    y,
-    size: 28,
-    speed: 120,
-    state: "normal",
-    color: "#c3342f",
-  };
-}
 
 function createResourceState() {
   return {
@@ -263,8 +241,8 @@ function render() {
   drawDamPlacementEffects();
   drawInvalidBuildFeedback();
   drawTrees();
-  drawPlayer();
-  drawPredator();
+ drawPlayer(ctx, player, getQuickPulseScale, WOOD_PICKUP_PULSE_DURATION);
+  drawPredator(ctx, predator, getPredatorColor());
   ctx.restore();
   drawHud();
 
@@ -306,73 +284,6 @@ function drawTree(tree) {
   ctx.fill();
 }
 
-function drawPlayer() {
-  const bodyWidth = player.size * 1.02;
-  const bodyHeight = player.size * 0.62;
-  const headRadius = player.size * 0.2;
-  const tailWidth = player.size * 0.56;
-  const tailHeight = player.size * 0.26;
-  const facingLeft = player.facingX < 0;
-  const pulseScale = getQuickPulseScale(player.pickupPulseTimer, WOOD_PICKUP_PULSE_DURATION, 0.2);
-  const shadowOffsetY = player.tilt * 10;
-
-  // Subtle shadow to reinforce vertical direction.
-  ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
-  ctx.beginPath();
-  ctx.ellipse(player.x, player.y + 12 + shadowOffsetY, bodyWidth * 0.35, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.save();
-  ctx.translate(player.x, player.y);
-  ctx.scale(pulseScale, pulseScale);
-  ctx.rotate(player.tilt);
-  if (facingLeft) {
-    ctx.scale(-1, 1);
-  }
-
-  // Tail (flat paddle, darker than body)
-  ctx.fillStyle = "#4f3a2a";
-  ctx.beginPath();
-  ctx.ellipse(-bodyWidth * 0.58, 0, tailWidth / 2, tailHeight / 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Body (rounded and slightly chunky)
-  ctx.fillStyle = "#7b4b2a";
-  ctx.beginPath();
-  ctx.ellipse(0, 0, bodyWidth / 2, bodyHeight / 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Head (front extension)
-  ctx.fillStyle = "#6d4224";
-  ctx.beginPath();
-  ctx.arc(bodyWidth * 0.42, -1, headRadius, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Optional simple paws
-  ctx.fillStyle = "#674026";
-  ctx.beginPath();
-  ctx.ellipse(bodyWidth * 0.14, bodyHeight * 0.33, 4, 2.2, 0, 0, Math.PI * 2);
-  ctx.ellipse(bodyWidth * 0.02, bodyHeight * 0.33, 4, 2.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Eye + nose
-  ctx.fillStyle = "#1a1a1a";
-  ctx.beginPath();
-  ctx.arc(bodyWidth * 0.46, -headRadius * 0.25, 1.8, 0, Math.PI * 2);
-  ctx.arc(bodyWidth * 0.56, 0, 2, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Front teeth (exaggerated identity cue)
-  ctx.fillStyle = "#e7a84a";
-  ctx.fillRect(bodyWidth * 0.53, 2, 4, 6);
-  ctx.fillRect(bodyWidth * 0.58, 2.8, 4, 6);
-  ctx.strokeStyle = "#9f6421";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(bodyWidth * 0.53, 2, 4, 6);
-  ctx.strokeRect(bodyWidth * 0.58, 2.8, 4, 6);
-
-  ctx.restore();
-}
 
 function drawDamPlacementEffects() {
   for (const effect of damPlacementEffects) {
@@ -389,47 +300,6 @@ function drawDamPlacementEffects() {
   }
 }
 
-function drawPredator() {
-  const renderSize = predator.size * 1.35;
-  const bodyRadius = renderSize * 0.38;
-  const headRadius = renderSize * 0.28;
-  const earRadius = renderSize * 0.11;
-  const color = getPredatorColor();
-
-  ctx.save();
-  ctx.translate(predator.x, predator.y);
-
-  // Body (larger, darker silhouette)
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(0, 4, bodyRadius * 1.05, bodyRadius * 0.85, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Head
-  ctx.beginPath();
-  ctx.arc(0, -bodyRadius * 0.55, headRadius, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Ears
-  ctx.beginPath();
-  ctx.arc(-headRadius * 0.65, -bodyRadius * 1.1, earRadius, 0, Math.PI * 2);
-  ctx.arc(headRadius * 0.65, -bodyRadius * 1.1, earRadius, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Muzzle + eyes
-  ctx.fillStyle = "rgba(240, 240, 240, 0.8)";
-  ctx.beginPath();
-  ctx.ellipse(0, -bodyRadius * 0.45, headRadius * 0.45, headRadius * 0.32, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#161616";
-  ctx.beginPath();
-  ctx.arc(-headRadius * 0.28, -bodyRadius * 0.65, 2, 0, Math.PI * 2);
-  ctx.arc(headRadius * 0.28, -bodyRadius * 0.65, 2, 0, Math.PI * 2);
-  ctx.arc(0, -bodyRadius * 0.45, 2, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
-}
 
 function drawDamTile(tile) {
   const halfSize = tile.size / 2;
