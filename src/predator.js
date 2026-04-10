@@ -6,6 +6,10 @@ export function createPredator(x, y) {
     speed: 120,
     state: "normal",
     color: "#c3342f",
+    lastKnownPlayerX: null,
+    lastKnownPlayerY: null,
+    stateTimer: 0,
+    circleDirection: 1,
   };
 }
 

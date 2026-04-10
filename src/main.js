@@ -1,6 +1,8 @@
 import { createPredator, drawPredator } from "./predator.js";
 import { createPlayer, drawPlayer } from "./player.js";
 import { clamp, moveTowards, snapToGrid, getDistance } from "./utils.js";
+import { createTerrainState, isPointInMud, isPointInReeds } from "./terrain.js";
+import { getDamEfficiencyTier, getDamEfficiencyValue, getTotalDamStrength, getPrimeDamBand } from "./dam.js";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -9,14 +11,18 @@ const HOME_X = canvas.width / 2;
 const HOME_Y = canvas.height / 2;
 const INITIAL_PLAYER_X = HOME_X + 28;
 const INITIAL_PLAYER_Y = HOME_Y + 10;
-const INITIAL_PREDATOR_X = 80;
-const INITIAL_PREDATOR_Y = 80;
+const INITIAL_PREDATOR_X = canvas.width - 90;
+const INITIAL_PREDATOR_Y = 90;
 const PREDATOR_AWARENESS_DELAY = 2.5;
 const INVALID_BUILD_FEEDBACK_DURATION = 0.22;
 const WOOD_PICKUP_PULSE_DURATION = 0.18;
 const DAM_PULSE_DURATION = 0.18;
 const HIT_SHAKE_DURATION = 0.26;
 const WIN_REQUIRED_POND_RADIUS = 262;
+const REEDS_DETECTION_RADIUS = 160;
+const REEDS_CHASE_SPEED_MULTIPLIER = 0.85;
+const PREDATOR_CIRCLE_MIN_DURATION = 0.8;
+const PREDATOR_CIRCLE_MAX_DURATION = 1.4;
 const PHASE_INTRO = "intro";
 const PHASE_INSTRUCTIONS = "instructions";
 const PHASE_PLAYING = "playing";
@@ -25,6 +31,7 @@ const input = createInputState();
 const player = createPlayer(INITIAL_PLAYER_X, INITIAL_PLAYER_Y);
 const predator = createPredator(INITIAL_PREDATOR_X, INITIAL_PREDATOR_Y);
 const resources = createResourceState();
+const terrainState = createTerrainState();
 
 let waterLevel = 0;
 let targetWaterLevel = 0;
@@ -218,6 +225,7 @@ function getBeaverTerrainSpeedMultiplier() {
   const isInPond = distanceFromLodge <= pond.outerRadius;
 
   if (isInPond) return 1;
+  if (isPointInMud(player.x, player.y, terrainState)) return 0.28;
   return 0.45;
 }
 
@@ -234,6 +242,7 @@ function render() {
   ctx.save();
   ctx.translate(shake.x, shake.y);
   drawGround();
+  drawTerrain();
   drawStream();
   drawWaterOverlay();
   drawLodge();
@@ -260,6 +269,47 @@ function render() {
 function drawGround() {
   ctx.fillStyle = "#9dd7ff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawTerrain() {
+  drawMudZones();
+  drawReedZones();
+}
+
+function drawMudZones() {
+  for (const zone of terrainState.mudZones) {
+    ctx.fillStyle = "rgba(122, 88, 57, 0.55)";
+    ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
+    ctx.strokeStyle = "rgba(87, 56, 33, 0.75)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(zone.x, zone.y, zone.width, zone.height);
+  }
+}
+
+function drawReedZones() {
+  for (const zone of terrainState.reedZones) {
+    ctx.fillStyle = "rgba(127, 177, 95, 0.32)";
+    ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
+    ctx.strokeStyle = "rgba(75, 126, 58, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(zone.x, zone.y, zone.width, zone.height);
+    drawReedBlades(zone);
+  }
+}
+
+function drawReedBlades(zone) {
+  const spacing = 18;
+  ctx.strokeStyle = "rgba(58, 116, 48, 0.72)";
+  ctx.lineWidth = 1.2;
+
+  for (let x = zone.x + 8; x <= zone.x + zone.width - 8; x += spacing) {
+    for (let y = zone.y + 8; y <= zone.y + zone.height - 8; y += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, y + 6);
+      ctx.lineTo(x + 2, y - 6);
+      ctx.stroke();
+    }
+  }
 }
 
 function drawTrees() {
@@ -292,9 +342,9 @@ function drawDamPlacementEffects() {
     const alpha = 0.15 + lifeRatio * 0.45;
     const halfSize = size / 2;
 
-    ctx.fillStyle = `rgba(181, 141, 92, ${alpha})`;
+    ctx.fillStyle = `rgba(${effect.fillRgb}, ${alpha})`;
     ctx.fillRect(effect.x - halfSize, effect.y - halfSize, size, size);
-    ctx.strokeStyle = `rgba(97, 65, 39, ${alpha})`;
+    ctx.strokeStyle = `rgba(${effect.strokeRgb}, ${alpha})`;
     ctx.lineWidth = 2;
     ctx.strokeRect(effect.x - halfSize, effect.y - halfSize, size, size);
   }
@@ -520,16 +570,26 @@ function drawStream() {
   drawStreamBand(
     {
       ...stream,
-      topWidth: stream.topWidth * 0.52,
-      bottomWidth: stream.bottomWidth * 0.52,
+      leftHeight: stream.leftHeight * 0.52,
+      rightHeight: stream.rightHeight * 0.52,
     },
     "rgba(64, 153, 222, 0.55)"
   );
+  drawPrimeDamBand(stream);
 
   ctx.strokeStyle = "rgba(44, 114, 171, 0.85)";
   ctx.lineWidth = 2;
   drawStreamPath(stream);
   ctx.stroke();
+}
+
+function drawPrimeDamBand(stream) {
+  const band = getPrimeDamBand(stream);
+  ctx.fillStyle = "rgba(76, 196, 102, 0.22)";
+  ctx.fillRect(band.x, band.y, band.width, band.height);
+  ctx.strokeStyle = "rgba(49, 139, 70, 0.85)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(band.x, band.y, band.width, band.height);
 }
 
 function drawStreamBand(stream, color) {
@@ -539,14 +599,14 @@ function drawStreamBand(stream, color) {
 }
 
 function drawStreamPath(stream) {
-  const topHalf = stream.topWidth / 2;
-  const bottomHalf = stream.bottomWidth / 2;
+  const leftHalf = stream.leftHeight / 2;
+  const rightHalf = stream.rightHeight / 2;
 
   ctx.beginPath();
-  ctx.moveTo(stream.centerX - topHalf, stream.startY);
-  ctx.lineTo(stream.centerX + topHalf, stream.startY);
-  ctx.lineTo(stream.centerX + bottomHalf, stream.endY);
-  ctx.lineTo(stream.centerX - bottomHalf, stream.endY);
+  ctx.moveTo(stream.startX, stream.centerY - leftHalf);
+  ctx.lineTo(stream.endX, stream.centerY - rightHalf);
+  ctx.lineTo(stream.endX, stream.centerY + rightHalf);
+  ctx.lineTo(stream.startX, stream.centerY + leftHalf);
   ctx.closePath();
 }
 
@@ -640,8 +700,9 @@ function updateWaterLevel(deltaTime) {
 }
 
 function getTargetWaterLevel() {
-  const waterPerDamTile = 10;
-  const unclampedTarget = resources.damTiles.length * waterPerDamTile;
+  const waterPerDamStrength = 10;
+  const totalDamStrength = getTotalDamStrength(resources.damTiles);
+  const unclampedTarget = totalDamStrength * waterPerDamStrength;
   return clamp(unclampedTarget, 0, getMaxWaterLevel());
 }
 
@@ -654,10 +715,10 @@ function getMaxWaterLevel() {
 function drawWaterOverlay() {
   const pond = getPondGeometry();
 
-  // Slightly oval pond for a simple, readable "pond" look.
+  // Horizontal oval pond for clearer map coverage.
   ctx.save();
   ctx.translate(pond.centerX, pond.centerY);
-  ctx.scale(1, 0.8);
+  ctx.scale(pond.xScale, pond.yScale);
 
   drawPondZone(pond.outerRadius, "rgba(126, 196, 244, 0.6)");
   drawPondZone(pond.middleRadius, "rgba(61, 143, 213, 0.65)");
@@ -686,7 +747,8 @@ function getPondGeometry() {
   return {
     centerX: HOME_X,
     centerY: HOME_Y,
-    yScale: 0.8,
+    xScale: 1.16,
+    yScale: 0.68,
     outerRadius,
     middleRadius: outerRadius * 0.68,
     innerRadius: outerRadius * 0.4,
@@ -700,23 +762,23 @@ function getPondStabilityPercent() {
 
 function getStreamGeometry() {
   return {
-    centerX: HOME_X,
-    startY: 0,
-    endY: HOME_Y + 48,
-    topWidth: 72,
-    bottomWidth: 132,
+    startX: 0,
+    endX: HOME_X + 52,
+    centerY: HOME_Y - 8,
+    leftHeight: 86,
+    rightHeight: 132,
   };
 }
 
 function isPointInStream(x, y) {
   const stream = getStreamGeometry();
-  if (y < stream.startY || y > stream.endY) return false;
+  if (x < stream.startX || x > stream.endX) return false;
 
-  const t = (y - stream.startY) / (stream.endY - stream.startY);
-  const widthAtY = stream.topWidth + (stream.bottomWidth - stream.topWidth) * t;
-  const halfWidth = widthAtY / 2;
+  const t = (x - stream.startX) / (stream.endX - stream.startX);
+  const heightAtX = stream.leftHeight + (stream.rightHeight - stream.leftHeight) * t;
+  const halfHeight = heightAtX / 2;
 
-  return x >= stream.centerX - halfWidth && x <= stream.centerX + halfWidth;
+  return y >= stream.centerY - halfHeight && y <= stream.centerY + halfHeight;
 }
 
 function drawGameOverMessage() {
@@ -789,6 +851,7 @@ function tryPlaceDamTile() {
   const damCost = 1;
   if (resources.wood < damCost) return;
 
+  const stream = getStreamGeometry();
   const tileSize = 24;
   const tile = {
     x: snapToGrid(player.x, tileSize),
@@ -806,9 +869,14 @@ function tryPlaceDamTile() {
   });
   if (alreadyPlaced) return;
 
+  const efficiencyTier = getDamEfficiencyTier(tile.x, tile.y, stream);
+  const efficiency = getDamEfficiencyValue(efficiencyTier);
+  tile.efficiencyTier = efficiencyTier;
+  tile.efficiency = efficiency;
+
   resources.wood -= damCost;
   resources.damTiles.push(tile);
-  triggerDamPlacementFeedback(tile.x, tile.y, tileSize);
+  triggerDamPlacementFeedback(tile.x, tile.y, tileSize, efficiencyTier);
   playDamPlacementSound();
 }
 
@@ -817,13 +885,23 @@ function triggerInvalidBuildFeedback(x, y, size) {
   invalidBuildFeedbackTimer = INVALID_BUILD_FEEDBACK_DURATION;
 }
 
-function triggerDamPlacementFeedback(x, y, size) {
+function triggerDamPlacementFeedback(x, y, size, efficiencyTier) {
+  const colors = getDamPlacementFeedbackColors(efficiencyTier);
   damPlacementEffects.push({
     x,
     y,
     size,
     timer: DAM_PULSE_DURATION,
+    fillRgb: colors.fillRgb,
+    strokeRgb: colors.strokeRgb,
   });
+}
+
+function getDamPlacementFeedbackColors(efficiencyTier) {
+  if (efficiencyTier === "prime") {
+    return { fillRgb: "86, 181, 108", strokeRgb: "45, 115, 61" };
+  }
+  return { fillRgb: "185, 150, 91", strokeRgb: "103, 73, 42" };
 }
 
 function updatePredator(deltaTime) {
@@ -834,6 +912,9 @@ function updatePredator(deltaTime) {
   }
 
   const pond = getPondGeometry();
+  const playerInReeds = isPointInReeds(player.x, player.y, terrainState);
+  const reedsSpeedMultiplier = playerInReeds ? REEDS_CHASE_SPEED_MULTIPLIER : 1;
+  const pacingSpeedMultiplier = getPredatorSpeedMultiplier(runTime);
   const currentDistanceFromLodge = getDistanceFromPondCenter(predator.x, predator.y, pond);
 
   // Safety clamp: if predator somehow starts inside deep water, keep it on the boundary.
@@ -841,22 +922,48 @@ function updatePredator(deltaTime) {
     const safePosition = projectPointToPondRadius(predator.x, predator.y, pond, pond.innerRadius + 0.1);
     predator.x = safePosition.x;
     predator.y = safePosition.y;
-    predator.state = "blocked";
+    beginPredatorCircling();
     return;
   }
 
   const pondZone = getPredatorPondZone();
-  predator.state = pondZone.state;
+  if (predator.state === "circle" && predator.stateTimer > 0) {
+    // Simple pond-edge probing behavior when direct inward movement is blocked.
+    updatePredatorCircleMovement(deltaTime, pond, pondZone.speedMultiplier, reedsSpeedMultiplier, pacingSpeedMultiplier);
+    return;
+  }
 
-  const dx = player.x - predator.x;
-  const dy = player.y - predator.y;
+  let targetX = player.x;
+  let targetY = player.y;
+  let usingLastKnownPosition = false;
+
+  const predatorDistanceToPlayer = getDistance(predator.x, predator.y, player.x, player.y);
+
+  if (playerInReeds && predatorDistanceToPlayer > REEDS_DETECTION_RADIUS) {
+    if (predator.lastKnownPlayerX !== null && predator.lastKnownPlayerY !== null) {
+      targetX = predator.lastKnownPlayerX;
+      targetY = predator.lastKnownPlayerY;
+      usingLastKnownPosition = true;
+    } else {
+      predator.state = "search";
+      return;
+    }
+  } else {
+    predator.lastKnownPlayerX = player.x;
+    predator.lastKnownPlayerY = player.y;
+  }
+
+  predator.state = usingLastKnownPosition ? "search" : pondZone.state;
+
+  const dx = targetX - predator.x;
+  const dy = targetY - predator.y;
   const distance = Math.hypot(dx, dy);
 
   if (distance <= 0.001) return;
 
   const dirX = dx / distance;
   const dirY = dy / distance;
-  const effectiveSpeed = predator.speed * pondZone.speedMultiplier;
+  const effectiveSpeed = predator.speed * pondZone.speedMultiplier * reedsSpeedMultiplier * pacingSpeedMultiplier;
   const nextX = predator.x + dirX * effectiveSpeed * deltaTime;
   const nextY = predator.y + dirY * effectiveSpeed * deltaTime;
   const nextDistanceFromLodge = getDistanceFromPondCenter(nextX, nextY, pond);
@@ -866,7 +973,7 @@ function updatePredator(deltaTime) {
     const boundaryPosition = projectPointToPondRadius(nextX, nextY, pond, pond.innerRadius + 0.1);
     predator.x = boundaryPosition.x;
     predator.y = boundaryPosition.y;
-    predator.state = "blocked";
+    beginPredatorCircling();
   } else {
     predator.x = nextX;
     predator.y = nextY;
@@ -875,6 +982,74 @@ function updatePredator(deltaTime) {
   const halfSize = predator.size / 2;
   predator.x = clamp(predator.x, halfSize, canvas.width - halfSize);
   predator.y = clamp(predator.y, halfSize, canvas.height - halfSize);
+}
+
+function beginPredatorCircling() {
+  predator.state = "circle";
+  predator.stateTimer = getRandomRange(PREDATOR_CIRCLE_MIN_DURATION, PREDATOR_CIRCLE_MAX_DURATION);
+  predator.circleDirection = Math.random() < 0.5 ? -1 : 1;
+}
+
+function updatePredatorCircleMovement(deltaTime, pond, pondSpeedMultiplier, reedsSpeedMultiplier, pacingSpeedMultiplier) {
+  const circleRadius = pond.innerRadius + 0.1;
+  const dx = predator.x - pond.centerX;
+  const dy = predator.y - pond.centerY;
+  const normalizedDx = dx / pond.xScale;
+  const normalizedDy = dy / pond.yScale;
+  const distance = Math.hypot(normalizedDx, normalizedDy);
+
+  if (distance <= 0.0001) {
+    const safePosition = projectPointToPondRadius(predator.x, predator.y, pond, circleRadius);
+    predator.x = safePosition.x;
+    predator.y = safePosition.y;
+    predator.stateTimer -= deltaTime;
+    if (predator.stateTimer <= 0) predator.state = "normal";
+    return;
+  }
+
+  const radialX = normalizedDx / distance;
+  const radialY = normalizedDy / distance;
+  const tangentX = -radialY * pond.xScale * predator.circleDirection;
+  const tangentY = radialX * pond.yScale * predator.circleDirection;
+  const tangentLength = Math.hypot(tangentX, tangentY);
+
+  const dirX = tangentLength > 0 ? tangentX / tangentLength : 0;
+  const dirY = tangentLength > 0 ? tangentY / tangentLength : 0;
+  const effectiveSpeed = predator.speed * pondSpeedMultiplier * reedsSpeedMultiplier * pacingSpeedMultiplier;
+
+  const movedX = predator.x + dirX * effectiveSpeed * deltaTime;
+  const movedY = predator.y + dirY * effectiveSpeed * deltaTime;
+  const boundaryPosition = projectPointToPondRadius(movedX, movedY, pond, circleRadius);
+
+  predator.x = boundaryPosition.x;
+  predator.y = boundaryPosition.y;
+
+  const halfSize = predator.size / 2;
+  predator.x = clamp(predator.x, halfSize, canvas.width - halfSize);
+  predator.y = clamp(predator.y, halfSize, canvas.height - halfSize);
+
+  if (getDistanceFromPondCenter(predator.x, predator.y, pond) < pond.innerRadius) {
+    const safePosition = projectPointToPondRadius(predator.x, predator.y, pond, circleRadius);
+    predator.x = safePosition.x;
+    predator.y = safePosition.y;
+  }
+
+  predator.stateTimer -= deltaTime;
+  if (predator.stateTimer <= 0) {
+    predator.state = "normal";
+    predator.stateTimer = 0;
+  }
+}
+
+function getRandomRange(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function getPredatorSpeedMultiplier(currentRunTime) {
+  // Simple time-based pressure scaling for early/mid/late pacing.
+  if (currentRunTime < 25) return 1.0;
+  if (currentRunTime < 55) return 1.08;
+  return 1.16;
 }
 
 function getPredatorPondZone() {
@@ -897,7 +1072,7 @@ function getPredatorPondZone() {
 }
 
 function getDistanceFromPondCenter(x, y, pond) {
-  const dx = x - pond.centerX;
+  const dx = (x - pond.centerX) / pond.xScale;
   const dy = (y - pond.centerY) / pond.yScale;
   return Math.hypot(dx, dy);
 }
@@ -905,11 +1080,12 @@ function getDistanceFromPondCenter(x, y, pond) {
 function projectPointToPondRadius(px, py, pond, radius) {
   const dx = px - pond.centerX;
   const dy = py - pond.centerY;
+  const normalizedDx = dx / pond.xScale;
   const normalizedDy = dy / pond.yScale;
-  const distance = Math.hypot(dx, normalizedDy);
+  const distance = Math.hypot(normalizedDx, normalizedDy);
 
   if (distance <= 0.0001) {
-    return { x: pond.centerX + radius, y: pond.centerY };
+    return { x: pond.centerX + radius * pond.xScale, y: pond.centerY };
   }
 
   const scale = radius / distance;
@@ -918,6 +1094,8 @@ function projectPointToPondRadius(px, py, pond, radius) {
 
 function getPredatorColor() {
   if (predator.state === "idle") return "#9ca3af";
+  if (predator.state === "circle") return "#b65c2f";
+  if (predator.state === "search") return "#8b5a2b";
   if (predator.state === "blocked") return "#6b7280";
   if (predator.state === "medium") return "#1f7a8f";
   if (predator.state === "shallow") return "#d97706";
@@ -962,6 +1140,10 @@ function restartGame() {
   predator.x = INITIAL_PREDATOR_X;
   predator.y = INITIAL_PREDATOR_Y;
   predator.state = "normal";
+  predator.lastKnownPlayerX = null;
+  predator.lastKnownPlayerY = null;
+  predator.stateTimer = 0;
+  predator.circleDirection = 1;
 
   resources.wood = 0;
   resources.trees = createTrees();
