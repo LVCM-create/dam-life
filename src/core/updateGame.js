@@ -1,8 +1,11 @@
 import { PHASE_INTRO, PHASE_PLAYING } from "../config.js";
 import { updatePlayer } from "../systems/playerSystem.js";
-import { updateWaterLevel, getPondStabilityPercent, getPondGeometry } from "../systems/pondSystem.js";
-import { updatePredator, checkGameOver, updateWinCondition } from "../systems/predatorSystem.js";
+import { updateWaterLevel, getPondGeometry } from "../systems/pondSystem.js";
+import { updatePredator, checkGameOver, saveFinalStats } from "../systems/predatorSystem.js";
 import { handleResourceActions, updateFeedbackEffects, triggerHitFeedback } from "../systems/resourceSystem.js";
+import { checkHungerDeath, updateHunger } from "../systems/hungerSystem.js";
+import { isRealtimeSeason, updateSeason } from "../systems/seasonSystem.js";
+import { updateWinterMode } from "../systems/winterEventSystem.js";
 
 export function updateGame(state, deltaTime, audio) {
   if (state.gamePhase === PHASE_PLAYING) {
@@ -11,16 +14,28 @@ export function updateGame(state, deltaTime, audio) {
 
   updatePresentationState(state, deltaTime);
 
-  if (state.gameOver || state.hasWon) return;
+  if (state.gameOver) return;
   if (state.gamePhase !== PHASE_PLAYING) return;
 
-  updatePlayer(state, deltaTime);
-  handleResourceActions(state, audio);
-  updatePredator(state, deltaTime);
+  updateSeason(state, deltaTime);
+  if (state.season.transitionCard.active && state.season.transitionCard.pauseGameplay) return;
 
-  checkGameOver(state, () => triggerHitFeedback(state, audio));
-  updateWinCondition(state, getPondGeometry);
-  updateWaterLevel(state, deltaTime);
+  if (isRealtimeSeason(state)) {
+    updatePlayer(state, deltaTime);
+    handleResourceActions(state, audio);
+    updateHunger(state, deltaTime);
+    updatePredator(state, deltaTime);
+    checkGameOver(state, () => triggerHitFeedback(state, audio));
+    updateWaterLevel(state, deltaTime);
+  } else {
+    updateWinterMode(state);
+  }
+
+  checkHungerDeath(state);
+  if (state.gameOver) {
+    const cause = state.finalStats.cause || "hunger";
+    saveFinalStats(state, getPondGeometry, cause);
+  }
 }
 
 function updatePresentationState(state, deltaTime) {
@@ -28,9 +43,13 @@ function updatePresentationState(state, deltaTime) {
     state.introAnimTime += deltaTime;
   }
 
-  if (state.gamePhase === PHASE_PLAYING && state.gameOver === false && state.hasWon === false) {
-    state.runTime += deltaTime;
+  if (state.gamePhase === PHASE_PLAYING && state.gameOver === false) {
+    if (
+      state.season &&
+      state.season.phase !== "winter" &&
+      (state.season.transitionCard.active === false || state.season.transitionCard.pauseGameplay === false)
+    ) {
+      state.runTime += deltaTime;
+    }
   }
-
-  state.pondStability = getPondStabilityPercent(state);
 }

@@ -1,12 +1,19 @@
-import { getDistance, snapToGrid, clamp } from "../utils/math.js";
+import { getDistance, snapToGrid } from "../utils/math.js";
 import { getDamEfficiencyTier, getDamEfficiencyValue } from "../dam.js";
 import {
   DAM_PULSE_DURATION,
   INVALID_BUILD_FEEDBACK_DURATION,
   WOOD_PICKUP_PULSE_DURATION,
   HIT_SHAKE_DURATION,
+  HUNGER_TREE_RESTORE,
+  STOCKPILE_GAIN_AUTUMN,
+  STOCKPILE_GAIN_GROWTH,
+  STOCKPILE_NEAR_LODGE_DISTANCE,
+  STOCKPILE_WOOD_COST,
+  YEAR_PHASE_AUTUMN,
 } from "../config.js";
 import { getStreamGeometry, isPointInStream } from "./pondSystem.js";
+import { restoreHunger } from "./hungerSystem.js";
 
 export function createResourceState() {
   return {
@@ -42,6 +49,11 @@ export function updateFeedbackEffects(state, deltaTime) {
     effect.timer = Math.max(0, effect.timer - deltaTime);
   }
   state.damPlacementEffects = state.damPlacementEffects.filter((effect) => effect.timer > 0);
+
+  for (const effect of state.stockpileEffects) {
+    effect.timer = Math.max(0, effect.timer - deltaTime);
+  }
+  state.stockpileEffects = state.stockpileEffects.filter((effect) => effect.timer > 0);
 }
 
 export function handleResourceActions(state, audio) {
@@ -53,6 +65,11 @@ export function handleResourceActions(state, audio) {
   if (state.input.buildRequested) {
     tryPlaceDamTile(state, audio);
     state.input.buildRequested = false;
+  }
+
+  if (state.input.stockpileRequested) {
+    tryStockpileFood(state, audio);
+    state.input.stockpileRequested = false;
   }
 }
 
@@ -98,6 +115,12 @@ export function drawDamTiles(ctx, state) {
   }
 }
 
+export function drawStockpileZone(ctx, state) {
+  const zone = getStockpileZone(state);
+  drawStockpileGround(ctx, zone);
+  drawStockpilePile(ctx, zone, state.foodStockpile);
+}
+
 export function drawDamPlacementEffects(ctx, state) {
   for (const effect of state.damPlacementEffects) {
     const lifeRatio = effect.timer / DAM_PULSE_DURATION;
@@ -110,6 +133,25 @@ export function drawDamPlacementEffects(ctx, state) {
     ctx.strokeStyle = `rgba(${effect.strokeRgb}, ${alpha})`;
     ctx.lineWidth = 2;
     ctx.strokeRect(effect.x - halfSize, effect.y - halfSize, size, size);
+  }
+}
+
+export function drawStockpileFeedbackEffects(ctx, state) {
+  for (const effect of state.stockpileEffects) {
+    const lifeRatio = effect.timer / DAM_PULSE_DURATION;
+    const radius = effect.size * (0.45 + (1 - lifeRatio) * 0.45);
+    const alpha = 0.12 + lifeRatio * 0.32;
+
+    ctx.fillStyle = `rgba(130, 102, 70, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(78, 54, 35, ${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 
@@ -151,7 +193,22 @@ function tryGatherWood(state, audio) {
   state.resources.wood += gatheredTree.woodValue;
   state.resources.trees.splice(nearbyTreeIndex, 1);
   state.player.pickupPulseTimer = WOOD_PICKUP_PULSE_DURATION;
+  restoreHunger(state, HUNGER_TREE_RESTORE);
   audio.playPickupSound();
+}
+
+function tryStockpileFood(state, audio) {
+  if (state.resources.wood < STOCKPILE_WOOD_COST) return;
+
+  const zone = getStockpileZone(state);
+  const distToZone = getDistance(state.player.x, state.player.y, zone.x, zone.y);
+  if (distToZone > zone.radius + 12) return;
+
+  const gain = state.season.phase === YEAR_PHASE_AUTUMN ? STOCKPILE_GAIN_AUTUMN : STOCKPILE_GAIN_GROWTH;
+  state.resources.wood -= STOCKPILE_WOOD_COST;
+  state.foodStockpile += gain;
+  triggerStockpileFeedback(state, zone.x, zone.y, zone.radius * 1.4);
+  audio.playDamPlacementSound();
 }
 
 function tryPlaceDamTile(state, audio) {
@@ -204,6 +261,15 @@ function triggerDamPlacementFeedback(state, x, y, size, efficiencyTier) {
   });
 }
 
+function triggerStockpileFeedback(state, x, y, size) {
+  state.stockpileEffects.push({
+    x,
+    y,
+    size,
+    timer: DAM_PULSE_DURATION,
+  });
+}
+
 function getDamPlacementFeedbackColors(efficiencyTier) {
   if (efficiencyTier === "prime") {
     return { fillRgb: "86, 181, 108", strokeRgb: "45, 115, 61" };
@@ -229,6 +295,55 @@ function drawDamTile(ctx, tile) {
   ctx.strokeStyle = "#4f3723";
   ctx.lineWidth = 2;
   ctx.strokeRect(tile.x - halfSize, tile.y - halfSize, tile.size, tile.size);
+}
+
+function getStockpileZone(state) {
+  const distanceFromLodge = Math.min(STOCKPILE_NEAR_LODGE_DISTANCE - 6, 56);
+  return {
+    x: state.world.HOME_X + distanceFromLodge,
+    y: state.world.HOME_Y + 20,
+    radius: 22,
+  };
+}
+
+function drawStockpileGround(ctx, zone) {
+  ctx.fillStyle = "rgba(132, 104, 73, 0.2)";
+  ctx.beginPath();
+  ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(83, 58, 39, 0.7)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawStockpilePile(ctx, zone, stockpile) {
+  if (stockpile <= 0) return;
+
+  const tier = getStockpileTier(stockpile);
+  const offsets = tier === 1 ? [-6, 6] : tier === 2 ? [-10, 0, 10] : [-13, -3, 7, 17];
+  const stickHeight = tier === 1 ? 10 : tier === 2 ? 13 : 16;
+
+  for (const offset of offsets) {
+    drawPileBranch(ctx, zone.x + offset, zone.y + 3 + Math.abs(offset) * 0.06, stickHeight);
+  }
+}
+
+function getStockpileTier(stockpile) {
+  if (stockpile < 4) return 1;
+  if (stockpile < 9) return 2;
+  return 3;
+}
+
+function drawPileBranch(ctx, x, y, height) {
+  const width = 7;
+  ctx.fillStyle = "#7f5b3b";
+  ctx.fillRect(x - width / 2, y - height, width, height);
+  ctx.strokeStyle = "#4f3823";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - width / 2, y - height, width, height);
 }
 
 function drawMudZones(ctx, mudZones) {

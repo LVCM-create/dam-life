@@ -99,7 +99,7 @@ export function checkGameOver(state, onHit) {
   const predatorDistance = getDistance(state.player.x, state.player.y, state.predator.x, state.predator.y);
 
   if (predatorDistance <= reachDistance) {
-    saveFinalStats(state);
+    saveFinalStats(state, getPondGeometry, "predator");
     onHit();
     state.gameOver = true;
   }
@@ -115,18 +115,10 @@ export function getPredatorColor(state) {
   return state.predator.color;
 }
 
-export function updateWinCondition(state, getPondGeometryFn) {
-  if (state.gameOver) return;
-
-  if (state.pondStability >= 100) {
-    saveFinalStats(state, getPondGeometryFn);
-    state.hasWon = true;
-  }
-}
-
-function saveFinalStats(state, getPondGeometryFn = getPondGeometry) {
+export function saveFinalStats(state, getPondGeometryFn = getPondGeometry, cause = null) {
   state.finalStats.timeSurvived = state.runTime;
   state.finalStats.pondSize = getPondGeometryFn(state).outerRadius;
+  if (cause) state.finalStats.cause = cause;
 }
 
 function beginPredatorCircling(state) {

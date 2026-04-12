@@ -1,11 +1,13 @@
-import { PHASE_INTRO, PHASE_INSTRUCTIONS } from "../config.js";
+import { PHASE_INTRO, PHASE_INSTRUCTIONS, YEAR_PHASE_AUTUMN, YEAR_PHASE_WINTER } from "../config.js";
 import { drawPlayer } from "../player.js";
 import { drawPredator } from "../predator.js";
 import {
   drawTerrain,
   drawTrees,
   drawDamTiles,
+  drawStockpileZone,
   drawDamPlacementEffects,
+  drawStockpileFeedbackEffects,
   drawInvalidBuildFeedback,
   getScreenShakeOffset,
   getQuickPulseScale,
@@ -18,12 +20,17 @@ import {
   drawIntroScreen,
   drawInstructionOverlay,
   drawGameOverMessage,
-  drawWinMessage,
+  drawPhaseTransitionCard,
 } from "../ui/overlays.js";
+import { drawWinterPanel } from "../ui/winterPanel.js";
 
 export function renderGame(state) {
   const ctx = state.ctx;
   const canvas = state.canvas;
+  const isInstructionScreen = state.gamePhase === PHASE_INSTRUCTIONS;
+  const isTransitionCardVisible = state.season && state.season.transitionCard.active;
+  const isWinterPanelVisible = state.season && state.season.phase === YEAR_PHASE_WINTER;
+  const isMajorOverlayVisible = state.gameOver || isInstructionScreen || isTransitionCardVisible || isWinterPanelVisible;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -36,13 +43,15 @@ export function renderGame(state) {
   ctx.save();
   ctx.translate(shake.x, shake.y);
 
-  drawGround(ctx, canvas);
+  drawGround(ctx, state);
   drawTerrain(ctx, state);
   drawStream(ctx, state);
   drawWaterOverlay(ctx, state);
   drawLodge(ctx, state);
+  drawStockpileZone(ctx, state);
   drawDamTiles(ctx, state);
   drawDamPlacementEffects(ctx, state);
+  drawStockpileFeedbackEffects(ctx, state);
   drawInvalidBuildFeedback(ctx, state);
   drawTrees(ctx, state);
   drawPlayer(ctx, state.player, getQuickPulseScale, WOOD_PICKUP_PULSE_DURATION);
@@ -50,22 +59,36 @@ export function renderGame(state) {
 
   ctx.restore();
 
-  drawHud(ctx, state);
+  if (isMajorOverlayVisible === false) {
+    drawHud(ctx, state);
+  }
 
-  if (state.gamePhase === PHASE_INSTRUCTIONS) {
+  if (isTransitionCardVisible && state.gameOver === false) {
+    drawPhaseTransitionCard(ctx, state);
+  }
+
+  if (isWinterPanelVisible && isTransitionCardVisible === false && state.gameOver === false) {
+    drawWinterPanel(ctx, state);
+  }
+
+  if (isInstructionScreen && isTransitionCardVisible === false && state.gameOver === false) {
     drawInstructionOverlay(ctx, state);
   }
 
   if (state.gameOver) {
     drawGameOverMessage(ctx, state);
-  } else if (state.hasWon) {
-    drawWinMessage(ctx, state);
   }
 }
 
-function drawGround(ctx, canvas) {
-  ctx.fillStyle = "#9dd7ff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+function drawGround(ctx, state) {
+  if (state.season.phase === YEAR_PHASE_AUTUMN) {
+    ctx.fillStyle = "#c9d8a0";
+  } else if (state.season.phase === YEAR_PHASE_WINTER) {
+    ctx.fillStyle = "#c7d8ea";
+  } else {
+    ctx.fillStyle = "#9dd7ff";
+  }
+  ctx.fillRect(0, 0, state.canvas.width, state.canvas.height);
 }
 
 function drawLodge(ctx, state) {

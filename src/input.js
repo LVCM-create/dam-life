@@ -1,4 +1,11 @@
-import { PHASE_INTRO, PHASE_INSTRUCTIONS, PHASE_PLAYING } from "./config.js";
+import {
+  PHASE_INTRO,
+  PHASE_INSTRUCTIONS,
+  PHASE_PLAYING,
+  YEAR_PHASE_AUTUMN,
+  YEAR_PHASE_GROWTH,
+  YEAR_PHASE_WINTER,
+} from "./config.js";
 
 export function createInputState() {
   return {
@@ -8,6 +15,7 @@ export function createInputState() {
     right: false,
     gatherRequested: false,
     buildRequested: false,
+    stockpileRequested: false,
   };
 }
 
@@ -18,6 +26,7 @@ export function clearInputState(input) {
   input.right = false;
   input.gatherRequested = false;
   input.buildRequested = false;
+  input.stockpileRequested = false;
 }
 
 function setDirectionKey(input, key, isPressed) {
@@ -33,20 +42,12 @@ export function setupInput(state, actions) {
   window.addEventListener("keydown", (event) => {
     const normalizedKey = event.key.toLowerCase();
 
-    if (normalizedKey === "e" && event.repeat === false) {
-      if (state.gamePhase === PHASE_PLAYING) state.input.gatherRequested = true;
-    }
-
-    if ((normalizedKey === "b" || normalizedKey === " ") && event.repeat === false) {
-      if (state.gamePhase === PHASE_PLAYING) state.input.buildRequested = true;
-    }
-
     if (normalizedKey === "m" && event.repeat === false) {
       console.log("[audio] manual ambient trigger");
       actions.ensureAudioStarted();
     }
 
-    if (normalizedKey === "r" && (state.gameOver || state.hasWon) && event.repeat === false) {
+    if (normalizedKey === "r" && state.gameOver && event.repeat === false) {
       actions.restartGame();
       return;
     }
@@ -62,12 +63,48 @@ export function setupInput(state, actions) {
     }
 
     if (state.gamePhase === PHASE_PLAYING) {
+      if (
+        state.season &&
+        state.season.transitionCard.active &&
+        state.season.transitionCard.requiresInput &&
+        event.repeat === false
+      ) {
+        state.season.transitionCard.active = false;
+        state.season.transitionCard.timer = 0;
+        return;
+      }
+
+      if (state.season.phase === YEAR_PHASE_WINTER) {
+        if (event.repeat === false) {
+          if (normalizedKey === "1") actions.submitWinterChoice(0);
+          if (normalizedKey === "2") actions.submitWinterChoice(1);
+          if (normalizedKey === "3") actions.submitWinterChoice(2);
+        }
+        return;
+      }
+
+      if (normalizedKey === "e" && event.repeat === false) {
+        state.input.gatherRequested = true;
+      }
+
+      if ((normalizedKey === "b" || normalizedKey === " ") && event.repeat === false) {
+        state.input.buildRequested = true;
+      }
+
+      if (normalizedKey === "f" && event.repeat === false) {
+        state.input.stockpileRequested = true;
+      }
+
       setDirectionKey(state.input, event.key, true);
     }
   });
 
   window.addEventListener("keyup", (event) => {
-    if (state.gamePhase === PHASE_PLAYING) {
+    const canMove =
+      state.gamePhase === PHASE_PLAYING &&
+      (state.season.phase === YEAR_PHASE_GROWTH || state.season.phase === YEAR_PHASE_AUTUMN);
+
+    if (canMove) {
       setDirectionKey(state.input, event.key, false);
     }
   });

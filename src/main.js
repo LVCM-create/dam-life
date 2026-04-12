@@ -3,6 +3,7 @@ import { setupInput } from "./input.js";
 import { createAudioSystem } from "./audio/audioSystem.js";
 import { updateGame } from "./core/updateGame.js";
 import { renderGame } from "./core/renderGame.js";
+import { setWinterChoice } from "./systems/winterEventSystem.js";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -14,6 +15,7 @@ setupInput(state, {
   ensureAudioStarted: audio.ensureAudioStarted,
   startGame: () => startGame(state),
   restartGame: () => restartGameState(state),
+  submitWinterChoice: (index) => setWinterChoice(state, index),
 });
 
 audio.initializeAmbientAudioOnStart();

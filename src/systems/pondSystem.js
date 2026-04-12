@@ -1,5 +1,4 @@
 import { clamp, moveTowards } from "../utils/math.js";
-import { WIN_REQUIRED_POND_RADIUS } from "../config.js";
 import { getTotalDamStrength, getPrimeDamBand } from "../dam.js";
 
 export function updateWaterLevel(state, deltaTime) {
@@ -12,15 +11,15 @@ export function getTargetWaterLevel(state) {
   const waterPerDamStrength = 10;
   const totalDamStrength = getTotalDamStrength(state.resources.damTiles);
   const unclampedTarget = totalDamStrength * waterPerDamStrength;
-  return clamp(unclampedTarget, 0, getMaxWaterLevel());
+  return clamp(unclampedTarget, 0, getMaxWaterLevel(state));
 }
 
-export function getMaxWaterLevel() {
-  return 100;
+export function getMaxWaterLevel(state) {
+  return 100 + (state.maxWaterBonus || 0);
 }
 
 export function getPondGeometry(state) {
-  const waterRatio = clamp(state.waterLevel / getMaxWaterLevel(), 0, 1);
+  const waterRatio = clamp(state.waterLevel / getMaxWaterLevel(state), 0, 1);
   const baseRadius = 95;
   const outerRadius = baseRadius + waterRatio * 190;
 
@@ -33,11 +32,6 @@ export function getPondGeometry(state) {
     middleRadius: outerRadius * 0.68,
     innerRadius: outerRadius * 0.4,
   };
-}
-
-export function getPondStabilityPercent(state) {
-  const pond = getPondGeometry(state);
-  return clamp((pond.outerRadius / WIN_REQUIRED_POND_RADIUS) * 100, 0, 100);
 }
 
 export function getStreamGeometry(state) {

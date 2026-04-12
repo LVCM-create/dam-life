@@ -24,7 +24,7 @@ export function drawIntroScreen(ctx, state) {
 
   const promptAlpha = 0.56 + (Math.sin(state.introAnimTime * 4.2) * 0.5 + 0.5) * 0.44;
   ctx.fillStyle = "rgba(247, 246, 239, " + promptAlpha + ")";
-  ctx.font = "20px Helvetica, Arial, sans-serif";
+  ctx.font = "21px Helvetica, Arial, sans-serif";
   ctx.fillText("Press any key to start", state.canvas.width / 2, state.canvas.height - 24);
 }
 
@@ -34,7 +34,7 @@ export function drawInstructionOverlay(ctx, state) {
   const panelX = 22;
   const panelY = 104;
   const panelWidth = 360;
-  const panelHeight = 190;
+  const panelHeight = 230;
 
   ctx.fillStyle = "rgba(12, 18, 20, 0.64)";
   ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
@@ -48,7 +48,8 @@ export function drawInstructionOverlay(ctx, state) {
   ctx.fillText("Move: WASD / Arrow Keys", panelX + 18, panelY + 72);
   ctx.fillText("Collect wood: E", panelX + 18, panelY + 102);
   ctx.fillText("Build dam: B or Space (in stream)", panelX + 18, panelY + 132);
-  ctx.fillText("Goal: Grow your pond and stay safe.", panelX + 18, panelY + 162);
+  ctx.fillText("Stockpile food near lodge: F", panelX + 18, panelY + 162);
+  ctx.fillText("Winter choices: keys 1, 2, 3", panelX + 18, panelY + 192);
 
   const promptWidth = 318;
   const promptHeight = 36;
@@ -70,37 +71,85 @@ export function drawGameOverMessage(ctx, state) {
   ctx.fillRect(0, 0, state.canvas.width, state.canvas.height);
 
   drawGameTitle(ctx, state.canvas.width / 2, state.canvas.height / 2 - 108, 62);
+  const cause = state.finalStats.cause;
+  const headline = cause === "hunger" ? "You starved" : "You were caught";
 
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "bold 48px Helvetica, Arial, sans-serif";
-  ctx.fillText("You Were Caught", state.canvas.width / 2, state.canvas.height / 2 - 44);
+  ctx.fillText(headline, state.canvas.width / 2, state.canvas.height / 2 - 44);
   ctx.font = "22px Helvetica, Arial, sans-serif";
-  ctx.fillText("Time survived: " + state.finalStats.timeSurvived.toFixed(1) + "s", state.canvas.width / 2, state.canvas.height / 2 + 2);
-  ctx.fillText("Final pond size: " + state.finalStats.pondSize.toFixed(1), state.canvas.width / 2, state.canvas.height / 2 + 32);
-  ctx.fillText("Press R to restart", state.canvas.width / 2, state.canvas.height / 2 + 70);
+  ctx.fillText("Year reached: " + state.year, state.canvas.width / 2, state.canvas.height / 2 + 2);
+  ctx.fillText("Phase: " + capitalizePhase(state.season.phase), state.canvas.width / 2, state.canvas.height / 2 + 32);
+  ctx.fillText("Survived: " + state.finalStats.timeSurvived.toFixed(1) + "s", state.canvas.width / 2, state.canvas.height / 2 + 62);
+  ctx.fillText("Press R to restart", state.canvas.width / 2, state.canvas.height / 2 + 94);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 }
 
-export function drawWinMessage(ctx, state) {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-  ctx.fillRect(0, 0, state.canvas.width, state.canvas.height);
+export function drawPhaseTransitionCard(ctx, state) {
+  if (state.season.transitionCard.variant === "winter_shift") {
+    drawWinterShiftCard(ctx, state);
+    return;
+  }
 
-  ctx.fillStyle = "#ffffff";
+  const cardWidth = 470;
+  const cardHeight = 154;
+  const cardX = (state.canvas.width - cardWidth) / 2;
+  const cardY = (state.canvas.height - cardHeight) / 2;
+
+  ctx.fillStyle = "rgba(10, 17, 26, 0.78)";
+  ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+  ctx.strokeStyle = "rgba(222, 238, 251, 0.8)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+
+  ctx.fillStyle = "#f2f7fb";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "bold 48px Helvetica, Arial, sans-serif";
-  ctx.fillText("You built a safe home.", state.canvas.width / 2, state.canvas.height / 2 - 44);
-  ctx.font = "22px Helvetica, Arial, sans-serif";
-  ctx.fillText("Time survived: " + state.finalStats.timeSurvived.toFixed(1) + "s", state.canvas.width / 2, state.canvas.height / 2 + 2);
-  ctx.fillText("Final pond size: " + state.finalStats.pondSize.toFixed(1), state.canvas.width / 2, state.canvas.height / 2 + 32);
-  ctx.fillText("Press R to restart", state.canvas.width / 2, state.canvas.height / 2 + 70);
+  ctx.font = "bold 44px Helvetica, Arial, sans-serif";
+  ctx.fillText(state.season.transitionCard.title, state.canvas.width / 2, cardY + 63);
+  if (state.season.transitionCard.subtitle) {
+    ctx.font = "23px Helvetica, Arial, sans-serif";
+    ctx.fillText(state.season.transitionCard.subtitle, state.canvas.width / 2, cardY + 102);
+  }
+  ctx.font = "18px Helvetica, Arial, sans-serif";
+  ctx.fillText("Year " + state.year, state.canvas.width / 2, cardY + 130);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
+}
+
+function drawWinterShiftCard(ctx, state) {
+  ctx.fillStyle = "rgba(9, 15, 23, 0.94)";
+  ctx.fillRect(0, 0, state.canvas.width, state.canvas.height);
+
+  ctx.fillStyle = "rgba(147, 192, 229, 0.2)";
+  ctx.beginPath();
+  ctx.ellipse(state.canvas.width * 0.5, state.canvas.height * 0.72, 280, 74, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2d3f52";
+  ctx.fillRect(state.canvas.width * 0.5 - 26, state.canvas.height * 0.62 - 18, 52, 36);
+  ctx.fillStyle = "#192633";
+  ctx.fillRect(state.canvas.width * 0.5 - 8, state.canvas.height * 0.62 - 4, 16, 22);
+
+  ctx.fillStyle = "#e8f2ff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 78px Helvetica, Arial, sans-serif";
+  ctx.fillText("WINTER", state.canvas.width / 2, state.canvas.height * 0.35);
+
+  ctx.font = "24px Helvetica, Arial, sans-serif";
+  ctx.fillStyle = "#d4e5f7";
+  ctx.fillText(
+    "Ice seals the pond and night comes early around the lodge.",
+    state.canvas.width / 2,
+    state.canvas.height * 0.48
+  );
+  ctx.fillText("Survive by choosing what to spend: warmth, stockpile, or safety.", state.canvas.width / 2, state.canvas.height * 0.54);
 }
 
 function drawGameTitle(ctx, x, y, fontSize) {
@@ -186,4 +235,9 @@ function drawCloud(ctx, x, y, scale) {
   ctx.fillRect(x, y, w, h);
   ctx.fillRect(x - 16 * scale, y + 8 * scale, w * 0.55, h * 0.72);
   ctx.fillRect(x + w * 0.56, y + 6 * scale, w * 0.5, h * 0.75);
+}
+
+function capitalizePhase(phase) {
+  if (!phase) return "Unknown";
+  return phase.charAt(0).toUpperCase() + phase.slice(1);
 }
