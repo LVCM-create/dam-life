@@ -1,3 +1,5 @@
+import { PHASE_INTRO, PHASE_INSTRUCTIONS, PHASE_PLAYING } from "./config.js";
+
 export function createInputState() {
   return {
     up: false,
@@ -9,6 +11,15 @@ export function createInputState() {
   };
 }
 
+export function clearInputState(input) {
+  input.up = false;
+  input.down = false;
+  input.left = false;
+  input.right = false;
+  input.gatherRequested = false;
+  input.buildRequested = false;
+}
+
 function setDirectionKey(input, key, isPressed) {
   const normalizedKey = key.toLowerCase();
 
@@ -18,45 +29,46 @@ function setDirectionKey(input, key, isPressed) {
   if (normalizedKey === "d" || normalizedKey === "arrowright") input.right = isPressed;
 }
 
-export function setupInputListeners(input, getGameState) {
+export function setupInput(state, actions) {
   window.addEventListener("keydown", (event) => {
     const normalizedKey = event.key.toLowerCase();
-    const { gamePhase, gameOver, hasWon, restartGame, ensureAudioStarted } = getGameState();
 
-    if (normalizedKey === "e" && !event.repeat) {
-      if (gamePhase === "playing") input.gatherRequested = true;
+    if (normalizedKey === "e" && event.repeat === false) {
+      if (state.gamePhase === PHASE_PLAYING) state.input.gatherRequested = true;
     }
 
-    if ((normalizedKey === "b" || normalizedKey === " ") && !event.repeat) {
-      if (gamePhase === "playing") input.buildRequested = true;
+    if ((normalizedKey === "b" || normalizedKey === " ") && event.repeat === false) {
+      if (state.gamePhase === PHASE_PLAYING) state.input.buildRequested = true;
     }
 
-    if (normalizedKey === "m" && !event.repeat) {
-      ensureAudioStarted();
+    if (normalizedKey === "m" && event.repeat === false) {
+      console.log("[audio] manual ambient trigger");
+      actions.ensureAudioStarted();
     }
 
-    if (normalizedKey === "r" && (gameOver || hasWon) && !event.repeat) {
-      restartGame();
+    if (normalizedKey === "r" && (state.gameOver || state.hasWon) && event.repeat === false) {
+      actions.restartGame();
       return;
     }
 
-    if (gamePhase === "intro" && !event.repeat) {
-      getGameState().setPhase("instructions");
+    if (state.gamePhase === PHASE_INTRO && event.repeat === false) {
+      state.gamePhase = PHASE_INSTRUCTIONS;
       return;
     }
 
-    if (gamePhase === "instructions" && !event.repeat) {
-      getGameState().startGame();
+    if (state.gamePhase === PHASE_INSTRUCTIONS && event.repeat === false) {
+      actions.startGame();
       return;
     }
 
-    if (gamePhase !== "playing") return;
-
-    setDirectionKey(input, event.key, true);
+    if (state.gamePhase === PHASE_PLAYING) {
+      setDirectionKey(state.input, event.key, true);
+    }
   });
 
   window.addEventListener("keyup", (event) => {
-    if (getGameState().gamePhase !== "playing") return;
-    setDirectionKey(input, event.key, false);
+    if (state.gamePhase === PHASE_PLAYING) {
+      setDirectionKey(state.input, event.key, false);
+    }
   });
 }
