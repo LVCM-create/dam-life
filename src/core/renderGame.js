@@ -5,6 +5,7 @@ import {
   drawTerrain,
   drawTrees,
   drawDamTiles,
+  drawDamBreakMarkers,
   drawStockpileZone,
   drawDamPlacementEffects,
   drawStockpileFeedbackEffects,
@@ -50,6 +51,7 @@ export function renderGame(state) {
   drawLodge(ctx, state);
   drawStockpileZone(ctx, state);
   drawDamTiles(ctx, state);
+  drawDamBreakMarkers(ctx, state);
   drawDamPlacementEffects(ctx, state);
   drawStockpileFeedbackEffects(ctx, state);
   drawInvalidBuildFeedback(ctx, state);

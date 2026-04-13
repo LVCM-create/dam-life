@@ -18,6 +18,11 @@ export function updateGame(state, deltaTime, audio) {
   if (state.gamePhase !== PHASE_PLAYING) return;
 
   updateSeason(state, deltaTime);
+  if (state.gameOver) {
+    const cause = state.finalStats.cause || "hunger";
+    saveFinalStats(state, getPondGeometry, cause);
+    return;
+  }
   if (state.season.transitionCard.active && state.season.transitionCard.pauseGameplay) return;
 
   if (isRealtimeSeason(state)) {
@@ -28,13 +33,20 @@ export function updateGame(state, deltaTime, audio) {
     checkGameOver(state, () => triggerHitFeedback(state, audio));
     updateWaterLevel(state, deltaTime);
   } else {
-    updateWinterMode(state);
+    updateWinterMode(state, deltaTime);
   }
 
   checkHungerDeath(state);
+  updateSlowStartRecovery(state);
   if (state.gameOver) {
     const cause = state.finalStats.cause || "hunger";
     saveFinalStats(state, getPondGeometry, cause);
+  }
+}
+
+function updateSlowStartRecovery(state) {
+  if (state.player.slowStartActive && state.hunger >= state.maxHunger) {
+    state.player.slowStartActive = false;
   }
 }
 

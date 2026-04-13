@@ -20,6 +20,7 @@ export function createResourceState() {
     wood: 0,
     trees: createTrees(),
     damTiles: [],
+    damBreakMarkers: [],
   };
 }
 
@@ -54,6 +55,11 @@ export function updateFeedbackEffects(state, deltaTime) {
     effect.timer = Math.max(0, effect.timer - deltaTime);
   }
   state.stockpileEffects = state.stockpileEffects.filter((effect) => effect.timer > 0);
+
+  for (const marker of state.resources.damBreakMarkers) {
+    marker.timer = Math.max(0, marker.timer - deltaTime);
+  }
+  state.resources.damBreakMarkers = state.resources.damBreakMarkers.filter((marker) => marker.timer > 0);
 }
 
 export function handleResourceActions(state, audio) {
@@ -112,6 +118,37 @@ export function drawTrees(ctx, state) {
 export function drawDamTiles(ctx, state) {
   for (const tile of state.resources.damTiles) {
     drawDamTile(ctx, tile);
+  }
+}
+
+export function drawDamBreakMarkers(ctx, state) {
+  for (const marker of state.resources.damBreakMarkers) {
+    const alpha = 0.18 + (marker.timer / marker.duration) * 0.5;
+    const radius = 8 + (1 - marker.timer / marker.duration) * 5;
+    const fill = marker.type === "winter_consequence" ? "206, 58, 58" : "186, 43, 43";
+    const stroke = marker.type === "winter_consequence" ? "143, 28, 28" : "120, 21, 21";
+    ctx.fillStyle = `rgba(${fill}, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${stroke}, ${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+export function addDamBreakMarkers(state, brokenTiles, markerType = "damage") {
+  const duration = markerType === "winter_consequence" ? 7.2 : 6.2;
+  for (const tile of brokenTiles) {
+    state.resources.damBreakMarkers.push({
+      x: tile.x,
+      y: tile.y,
+      timer: duration,
+      duration,
+      type: markerType,
+    });
   }
 }
 
@@ -323,18 +360,21 @@ function drawStockpilePile(ctx, zone, stockpile) {
   if (stockpile <= 0) return;
 
   const tier = getStockpileTier(stockpile);
-  const offsets = tier === 1 ? [-6, 6] : tier === 2 ? [-10, 0, 10] : [-13, -3, 7, 17];
-  const stickHeight = tier === 1 ? 10 : tier === 2 ? 13 : 16;
+  drawPileLayer(ctx, zone, tier);
 
-  for (const offset of offsets) {
-    drawPileBranch(ctx, zone.x + offset, zone.y + 3 + Math.abs(offset) * 0.06, stickHeight);
+  if (tier >= 2) {
+    drawPileLayer(ctx, { ...zone, y: zone.y - 5 }, tier - 1);
+  }
+  if (tier >= 4) {
+    drawPileLayer(ctx, { ...zone, y: zone.y - 10 }, 2);
   }
 }
 
 function getStockpileTier(stockpile) {
   if (stockpile < 4) return 1;
-  if (stockpile < 9) return 2;
-  return 3;
+  if (stockpile < 10) return 2;
+  if (stockpile < 20) return 3;
+  return 4;
 }
 
 function drawPileBranch(ctx, x, y, height) {
@@ -344,6 +384,27 @@ function drawPileBranch(ctx, x, y, height) {
   ctx.strokeStyle = "#4f3823";
   ctx.lineWidth = 1;
   ctx.strokeRect(x - width / 2, y - height, width, height);
+}
+
+function drawPileLayer(ctx, zone, tier) {
+  const offsetsByTier = {
+    1: [-8, 0, 8],
+    2: [-13, -4, 5, 14],
+    3: [-18, -9, 0, 9, 18],
+    4: [-22, -13, -4, 5, 14, 23],
+  };
+  const heightByTier = {
+    1: 10,
+    2: 12,
+    3: 14,
+    4: 16,
+  };
+
+  const offsets = offsetsByTier[tier];
+  const branchHeight = heightByTier[tier];
+  for (const offset of offsets) {
+    drawPileBranch(ctx, zone.x + offset, zone.y + 4 + Math.abs(offset) * 0.03, branchHeight);
+  }
 }
 
 function drawMudZones(ctx, mudZones) {

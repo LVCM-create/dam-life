@@ -22,6 +22,7 @@ export function initializeSeason(state) {
       pauseGameplay: false,
       variant: "standard",
       requiresInput: false,
+      inputDelayTimer: 0,
       timer: 0,
     },
   };
@@ -29,7 +30,12 @@ export function initializeSeason(state) {
 
 export function updateSeason(state, deltaTime) {
   if (state.season.transitionCard.active) {
-    if (state.season.transitionCard.requiresInput === false) {
+    if (state.season.transitionCard.requiresInput) {
+      state.season.transitionCard.inputDelayTimer = Math.max(
+        0,
+        state.season.transitionCard.inputDelayTimer - deltaTime
+      );
+    } else {
       state.season.transitionCard.timer -= deltaTime;
       if (state.season.transitionCard.timer <= 0) {
         state.season.transitionCard.active = false;
@@ -68,7 +74,8 @@ export function updateSeason(state, deltaTime) {
       "The pond is frozen. Every choice now trades warmth, stockpile, or safety.",
       true,
       "winter_shift",
-      true
+      true,
+      3
     );
     startWinter(state);
   }
@@ -90,7 +97,8 @@ export function showTransitionCard(
   subtitle = "",
   pauseGameplay = false,
   variant = "standard",
-  requiresInput = false
+  requiresInput = false,
+  inputDelaySeconds = 0
 ) {
   state.season.transitionCard = {
     active: true,
@@ -99,6 +107,7 @@ export function showTransitionCard(
     pauseGameplay,
     variant,
     requiresInput,
+    inputDelayTimer: inputDelaySeconds,
     timer: state.season.phaseCardDuration,
   };
 }

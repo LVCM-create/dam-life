@@ -33,8 +33,10 @@ export function updatePlayer(state, deltaTime) {
 
   const terrainSpeedMultiplier = getBeaverTerrainSpeedMultiplier(state);
   const beaverSpeed = state.player.speed * terrainSpeedMultiplier;
-  state.player.x += moveX * beaverSpeed * deltaTime;
-  state.player.y += moveY * beaverSpeed * deltaTime;
+  state.player.vx = moveX * beaverSpeed;
+  state.player.vy = moveY * beaverSpeed;
+  state.player.x += state.player.vx * deltaTime;
+  state.player.y += state.player.vy * deltaTime;
 
   const halfSize = state.player.size / 2;
   state.player.x = clamp(state.player.x, halfSize, state.canvas.width - halfSize);
@@ -46,7 +48,12 @@ function getBeaverTerrainSpeedMultiplier(state) {
   const distanceFromLodge = getDistanceFromPondCenter(state.player.x, state.player.y, pond);
   const isInPond = distanceFromLodge <= pond.outerRadius;
 
-  if (isInPond) return 1;
-  if (isPointInMud(state.player.x, state.player.y, state.terrainState)) return 0.28;
-  return 0.45;
+  let multiplier = 1;
+  if (isInPond === false) {
+    multiplier = isPointInMud(state.player.x, state.player.y, state.terrainState) ? 0.28 : 0.45;
+  }
+  if (state.player.slowStartActive) {
+    multiplier *= 0.58;
+  }
+  return multiplier;
 }

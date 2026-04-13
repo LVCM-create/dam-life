@@ -2,7 +2,7 @@ export function drawWinterPanel(ctx, state) {
   if (state.winter.active === false) return;
 
   const panelWidth = 520;
-  const panelHeight = 286;
+  const panelHeight = 292;
   const panelX = (state.canvas.width - panelWidth) / 2;
   const panelY = (state.canvas.height - panelHeight) / 2;
 
@@ -17,34 +17,35 @@ export function drawWinterPanel(ctx, state) {
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
-  ctx.font = "bold 30px Helvetica, Arial, sans-serif";
-  ctx.fillText("Winter", panelX + 22, panelY + 42);
-  ctx.font = "18px Helvetica, Arial, sans-serif";
-  ctx.fillText("Events left: " + state.winter.stepsRemaining, panelX + 22, panelY + 72);
+  ctx.font = "bold 16px Helvetica, Arial, sans-serif";
+  ctx.fillText("Winter", panelX + 22, panelY + 32);
+  ctx.fillText("Stockpile: " + state.foodStockpile, panelX + panelWidth - 168, panelY + 28);
+  ctx.font = "14px Helvetica, Arial, sans-serif";
+  ctx.fillStyle = "#b6d1ed";
+  ctx.fillText("Upkeep this turn: -2", panelX + panelWidth - 168, panelY + 48);
 
   if (state.winter.currentEvent) {
     const event = state.winter.currentEvent;
-    ctx.font = "bold 14px Helvetica, Arial, sans-serif";
-    ctx.fillStyle = "#b8d5ef";
-    ctx.fillText(event.category, panelX + 22, panelY + 96);
-
-    ctx.font = "bold 22px Helvetica, Arial, sans-serif";
+    ctx.font = "bold 30px Helvetica, Arial, sans-serif";
     ctx.fillStyle = "#e5f1ff";
-    ctx.fillText(event.title, panelX + 22, panelY + 122);
+    ctx.fillText(event.title, panelX + 22, panelY + 78);
     ctx.font = "17px Helvetica, Arial, sans-serif";
-    drawWrappedText(ctx, event.body, panelX + 22, panelY + 148, panelWidth - 44, 22);
+    drawWrappedText(ctx, event.body, panelX + 22, panelY + 106, panelWidth - 44, 22);
 
+    const choiceStartY = panelY + 168;
     for (let i = 0; i < event.choices.length; i += 1) {
-      const y = panelY + 198 + i * 28;
-      ctx.fillStyle = "#d9e9fb";
-      ctx.fillText((i + 1) + ". " + event.choices[i].label, panelX + 30, y);
+      const choice = event.choices[i];
+      const y = choiceStartY + i * 34;
+      ctx.fillStyle = choice.disabled ? "rgba(201, 168, 168, 0.9)" : "#d9e9fb";
+      ctx.font = "bold 16px Helvetica, Arial, sans-serif";
+      ctx.fillText((i + 1) + ". " + choice.label, panelX + 30, y);
     }
   }
 
   if (state.winter.lastOutcome) {
     ctx.fillStyle = "#b6d1ed";
     ctx.font = "16px Helvetica, Arial, sans-serif";
-    drawWrappedText(ctx, state.winter.lastOutcome, panelX + 22, panelY + panelHeight - 30, panelWidth - 44, 18);
+    drawWrappedText(ctx, state.winter.lastOutcome, panelX + 22, panelY + panelHeight - 28, panelWidth - 44, 18);
   }
 }
 

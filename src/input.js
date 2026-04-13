@@ -69,8 +69,12 @@ export function setupInput(state, actions) {
         state.season.transitionCard.requiresInput &&
         event.repeat === false
       ) {
+        if (state.season.transitionCard.inputDelayTimer > 0) {
+          return;
+        }
         state.season.transitionCard.active = false;
         state.season.transitionCard.timer = 0;
+        state.season.transitionCard.inputDelayTimer = 0;
         return;
       }
 

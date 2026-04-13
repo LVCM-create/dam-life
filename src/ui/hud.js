@@ -43,6 +43,12 @@ export function drawHud(ctx, state) {
   ctx.font = "bold 14px Helvetica, Arial, sans-serif";
   ctx.fillText("Stockpile: " + state.foodStockpile, stockpileX, centerY);
   ctx.fillText(getPhaseLabel(state) + " - Year " + state.year, phaseYearX, centerY);
+
+  if (state.player.slowStartActive) {
+    ctx.fillStyle = "rgba(167, 48, 48, 0.95)";
+    ctx.font = "bold 12px Helvetica, Arial, sans-serif";
+    ctx.fillText("Weak: Slow Start", 654, centerY);
+  }
 }
 
 function drawWoodDisplay(ctx, x, centerY, woodCount) {

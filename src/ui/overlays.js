@@ -72,18 +72,23 @@ export function drawGameOverMessage(ctx, state) {
 
   drawGameTitle(ctx, state.canvas.width / 2, state.canvas.height / 2 - 108, 62);
   const cause = state.finalStats.cause;
-  const headline = cause === "hunger" ? "You starved" : "You were caught";
+  const headline = cause === "hunger" || cause === "winter_starvation" ? "You starved" : "You were caught";
+  const subtext = cause === "winter_starvation" ? "Not enough stockpile for Winter" : "";
 
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "bold 48px Helvetica, Arial, sans-serif";
   ctx.fillText(headline, state.canvas.width / 2, state.canvas.height / 2 - 44);
+  if (subtext) {
+    ctx.font = "22px Helvetica, Arial, sans-serif";
+    ctx.fillText(subtext, state.canvas.width / 2, state.canvas.height / 2 - 10);
+  }
   ctx.font = "22px Helvetica, Arial, sans-serif";
-  ctx.fillText("Year reached: " + state.year, state.canvas.width / 2, state.canvas.height / 2 + 2);
-  ctx.fillText("Phase: " + capitalizePhase(state.season.phase), state.canvas.width / 2, state.canvas.height / 2 + 32);
-  ctx.fillText("Survived: " + state.finalStats.timeSurvived.toFixed(1) + "s", state.canvas.width / 2, state.canvas.height / 2 + 62);
-  ctx.fillText("Press R to restart", state.canvas.width / 2, state.canvas.height / 2 + 94);
+  ctx.fillText("Year reached: " + state.year, state.canvas.width / 2, state.canvas.height / 2 + 18);
+  ctx.fillText("Phase: " + capitalizePhase(state.season.phase), state.canvas.width / 2, state.canvas.height / 2 + 48);
+  ctx.fillText("Survived: " + state.finalStats.timeSurvived.toFixed(1) + "s", state.canvas.width / 2, state.canvas.height / 2 + 78);
+  ctx.fillText("Press R to restart", state.canvas.width / 2, state.canvas.height / 2 + 110);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
@@ -144,12 +149,17 @@ function drawWinterShiftCard(ctx, state) {
 
   ctx.font = "24px Helvetica, Arial, sans-serif";
   ctx.fillStyle = "#d4e5f7";
-  ctx.fillText(
-    "Ice seals the pond and night comes early around the lodge.",
-    state.canvas.width / 2,
-    state.canvas.height * 0.48
-  );
-  ctx.fillText("Survive by choosing what to spend: warmth, stockpile, or safety.", state.canvas.width / 2, state.canvas.height * 0.54);
+  ctx.fillText("Food is limited.", state.canvas.width / 2, state.canvas.height * 0.48);
+  ctx.fillText("The dam must hold.", state.canvas.width / 2, state.canvas.height * 0.54);
+  ctx.fillText("Choose carefully.", state.canvas.width / 2, state.canvas.height * 0.6);
+  ctx.font = "20px Helvetica, Arial, sans-serif";
+  ctx.fillText("Minimum stockpile to survive Winter: 4", state.canvas.width / 2, state.canvas.height * 0.67);
+
+  if (state.season.transitionCard.inputDelayTimer <= 0) {
+    ctx.fillStyle = "rgba(232, 242, 255, 0.85)";
+    ctx.font = "22px Helvetica, Arial, sans-serif";
+    ctx.fillText("Press any key to continue", state.canvas.width / 2, state.canvas.height * 0.9);
+  }
 }
 
 function drawGameTitle(ctx, x, y, fontSize) {

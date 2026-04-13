@@ -62,6 +62,10 @@ export function createGameState(canvas, ctx) {
       currentEvent: null,
       pendingChoice: null,
       lastOutcome: "",
+      outcomeTimer: 0,
+      pendingGrowthDamBreaks: 0,
+      slowStartPending: false,
+      winterDamageWorsened: false,
     },
 
     audioContext: null,
@@ -98,6 +102,7 @@ export function restartGameState(state) {
   state.resources.wood = 0;
   state.resources.trees = createTrees();
   state.resources.damTiles = [];
+  state.resources.damBreakMarkers = [];
 
   state.waterLevel = 0;
   state.targetWaterLevel = 0;
@@ -108,6 +113,7 @@ export function restartGameState(state) {
   state.invalidBuildFeedbackTimer = 0;
   state.screenShakeTimer = 0;
   state.player.pickupPulseTimer = 0;
+  state.player.slowStartActive = false;
   state.runTime = 0;
   state.gameStarted = false;
   state.gamePhase = PHASE_INTRO;
@@ -124,6 +130,10 @@ export function restartGameState(state) {
   state.winter.currentEvent = null;
   state.winter.pendingChoice = null;
   state.winter.lastOutcome = "";
+  state.winter.outcomeTimer = 0;
+  state.winter.pendingGrowthDamBreaks = 0;
+  state.winter.slowStartPending = false;
+  state.winter.winterDamageWorsened = false;
 
   initializeSeason(state);
   initializeHunger(state);

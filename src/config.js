@@ -38,7 +38,8 @@ export const AUTUMN_DURATION = 25;
 export const AUTUMN_WARNING_TIME = 8;
 export const PHASE_CARD_DURATION = 2.5;
 
-export const WINTER_EVENT_STEPS = 3;
+export const WINTER_EVENT_STEPS = 2;
+export const WINTER_UPKEEP_PER_EVENT = 2;
 
 export const DRIFT_WATER_RETAIN = 0.84;
 export const EXPANSION_MAX_WATER_BONUS = 14;

@@ -1,13 +1,30 @@
-import { YEAR_PHASE_GROWTH, WINTER_EVENT_STEPS } from "../config.js";
-import { applyYearEndTransition } from "./yearSystem.js";
+import { YEAR_PHASE_GROWTH, WINTER_EVENT_STEPS, WINTER_UPKEEP_PER_EVENT } from "../config.js";
+import { applyYearEndTransition, applyClusterDamDamageByCount } from "./yearSystem.js";
 import { restoreHunger } from "./hungerSystem.js";
+import { addDamBreakMarkers } from "./resourceSystem.js";
 
 export function startWinter(state) {
+  const minimumStockpile = WINTER_EVENT_STEPS * WINTER_UPKEEP_PER_EVENT;
+  if (state.foodStockpile < minimumStockpile) {
+    state.gameOver = true;
+    state.finalStats.cause = "winter_starvation";
+    state.winter.active = false;
+    state.winter.currentEvent = null;
+    state.winter.pendingChoice = null;
+    state.winter.lastOutcome = "";
+    state.winter.outcomeTimer = 0;
+    return;
+  }
+
   state.winter.active = true;
   state.winter.stepsRemaining = WINTER_EVENT_STEPS;
   state.winter.currentEvent = null;
   state.winter.pendingChoice = null;
   state.winter.lastOutcome = "";
+  state.winter.outcomeTimer = 0;
+  state.winter.pendingGrowthDamBreaks = 0;
+  state.winter.slowStartPending = false;
+  state.winter.winterDamageWorsened = false;
 }
 
 export function setWinterChoice(state, choiceIndex) {
@@ -15,8 +32,14 @@ export function setWinterChoice(state, choiceIndex) {
   state.winter.pendingChoice = choiceIndex;
 }
 
-export function updateWinterMode(state) {
+export function updateWinterMode(state, deltaTime) {
   if (state.winter.active === false) return;
+
+  if (state.winter.outcomeTimer > 0) {
+    state.winter.outcomeTimer = Math.max(0, state.winter.outcomeTimer - deltaTime);
+    if (state.winter.outcomeTimer > 0) return;
+    state.winter.lastOutcome = "";
+  }
 
   if (state.winter.currentEvent === null) {
     state.winter.currentEvent = createWinterEvent(state);
@@ -27,16 +50,36 @@ export function updateWinterMode(state) {
 
   const event = state.winter.currentEvent;
   const selected = event.choices[state.winter.pendingChoice];
+  if (selected && selected.disabled) {
+    state.winter.lastOutcome = selected.disabledMessage || "Not enough stockpile for that choice.";
+    state.winter.pendingChoice = null;
+    return;
+  }
+  let eventStockpileCost = 0;
   if (selected) {
+    eventStockpileCost = selected.stockpileCost || 0;
     selected.apply(state);
-    state.winter.lastOutcome = selected.outcome;
   }
 
+  let upkeepCost = 0;
   if (state.foodStockpile > 0) {
-    state.foodStockpile -= 1;
-    restoreHunger(state, 2);
+    const consumed = Math.min(WINTER_UPKEEP_PER_EVENT, state.foodStockpile);
+    state.foodStockpile -= consumed;
+    restoreHunger(state, consumed);
+    upkeepCost = consumed;
   } else {
     state.hunger = Math.max(0, state.hunger - 4);
+  }
+
+  if (selected) {
+    state.winter.lastOutcome =
+      selected.outcome +
+      " Choice: -" +
+      eventStockpileCost +
+      " Stockpile. Upkeep: -" +
+      upkeepCost +
+      " Stockpile.";
+    state.winter.outcomeTimer = 1.4;
   }
 
   state.winter.pendingChoice = null;
@@ -53,8 +96,26 @@ function endWinter(state) {
   state.winter.currentEvent = null;
   state.winter.pendingChoice = null;
   state.winter.lastOutcome = "Spring returns.";
+  state.winter.outcomeTimer = 0;
 
-  applyYearEndTransition(state);
+  const transitionInfo = applyYearEndTransition(state);
+  applyWinterStructuralConsequences(state, transitionInfo);
+  if (transitionInfo.driftBrokenTiles.length > 0) {
+    addDamBreakMarkers(state, transitionInfo.driftBrokenTiles, "drift");
+  }
+  state.winter.pendingGrowthDamBreaks = 0;
+  state.player.slowStartActive = state.winter.slowStartPending;
+
+  state.player.x = state.world.HOME_X;
+  state.player.y = state.world.HOME_Y;
+  state.player.vx = 0;
+  state.player.vy = 0;
+  state.player.tilt = 0;
+  state.player.targetTilt = 0;
+  state.input.up = false;
+  state.input.down = false;
+  state.input.left = false;
+  state.input.right = false;
 
   state.season.phase = YEAR_PHASE_GROWTH;
   state.season.phaseElapsed = 0;
@@ -65,62 +126,42 @@ function endWinter(state) {
     subtitle: "",
     pauseGameplay: false,
     variant: "standard",
+    requiresInput: false,
+    inputDelayTimer: 0,
     timer: state.season.phaseCardDuration,
   };
+  if (state.winter.winterDamageWorsened) {
+    state.season.transitionCard.subtitle = "Winter damage worsened the dam";
+  } else if (state.player.slowStartActive) {
+    state.season.transitionCard.subtitle = "You are weak from hunger";
+  } else if (transitionInfo.expansionApplied) {
+    state.season.transitionCard.subtitle = "Expansion Year - the map opens outward.";
+  }
 }
 
 function createWinterEvent(state) {
-  const roll = Math.random();
-
-  if (roll < 0.34) {
+  if (Math.random() < 0.5) {
+    const canPatch = state.foodStockpile >= 4;
     return {
-      category: "Food Pressure",
-      title: "Stockpile Stores",
-      body: "Frost creeps into the lodge. Spend less now, or spend more to stay strong.",
+      title: "Leak in Dam",
+      body: "Ice splits a seam near the spillway.",
       choices: [
         {
-          label: "Strict Rations",
-          outcome: "You stretch supplies, but stay hungry.",
+          label: "Patch -> -4 Stockpile, Safe Spring",
+          stockpileCost: 4,
+          disabled: canPatch === false,
+          disabledMessage: "Not enough stockpile to patch. Choose Stay.",
+          outcome: "Patched the leak. Spring should be safer.",
           apply: (s) => {
-            s.foodStockpile = Math.max(0, s.foodStockpile - 1);
-            s.hunger = Math.max(0, s.hunger - 2);
+            s.foodStockpile -= 4;
           },
         },
         {
-          label: "Hearty Meal",
-          outcome: "Warmth returns, but stores drop fast.",
+          label: "Stay -> 0 Cost, More damage in Spring",
+          stockpileCost: 0,
+          outcome: "You stayed inside. More dam sections will fail in Spring.",
           apply: (s) => {
-            s.foodStockpile = Math.max(0, s.foodStockpile - 2);
-            restoreHunger(s, 8);
-          },
-        },
-      ],
-    };
-  }
-
-  if (roll < 0.67) {
-    return {
-      category: "Dam Integrity",
-      title: "Dam Leak",
-      body: "Ice pressure splits a weak seam. Patch now, or let water slip away.",
-      choices: [
-        {
-          label: "Emergency Patch",
-          outcome: "The leak slows, but the work drains you.",
-          apply: (s) => {
-            s.waterLevel *= 0.95;
-            s.targetWaterLevel *= 0.95;
-            s.hunger = Math.max(0, s.hunger - 3);
-            s.resources.wood = Math.max(0, s.resources.wood - 1);
-          },
-        },
-        {
-          label: "Hold Position",
-          outcome: "You stay warm now, but the pond shrinks.",
-          apply: (s) => {
-            s.waterLevel *= 0.8;
-            s.targetWaterLevel *= 0.8;
-            s.hunger = Math.max(0, s.hunger - 1);
+            s.winter.pendingGrowthDamBreaks += 5;
           },
         },
       ],
@@ -128,37 +169,53 @@ function createWinterEvent(state) {
   }
 
   return {
-    category: "Exposure Risk",
-    title: "Exposure Risk",
-    body: "Tracks circle the frozen bank. Leave shelter for supplies, or stay hidden.",
+    title: "Food Running Low",
+    body: "Stores are thinning before thaw.",
     choices: [
       {
-        label: "Stay Hidden",
-        outcome: "You remain safe, but hunger lingers.",
+        label: "Eat -> -3 Stockpile, Normal Spring",
+        stockpileCost: 3,
+        disabled: state.foodStockpile < 3,
+        disabledMessage: "Not enough stockpile to eat fully. Choose Ration.",
+        outcome: "You eat from reserves and stay steady for Spring.",
         apply: (s) => {
-          s.hunger = Math.max(0, s.hunger - 5);
+          s.foodStockpile -= 3;
         },
       },
       {
-        label: "Risk a Forage Run",
-        outcome: "You step into the snow and gamble.",
+        label: "Ration -> 0 Cost, Slow Spring",
+        stockpileCost: 0,
+        outcome: "You ration through winter. Spring begins with weak movement.",
         apply: (s) => {
-          const chance = Math.random();
-          if (chance < 0.4) {
-            s.foodStockpile += 2;
-            s.hunger = Math.max(0, s.hunger - 4);
-            s.winter.lastOutcome = "You return with a useful cache.";
-          } else if (chance < 0.78) {
-            s.hunger = Math.max(0, s.hunger - 9);
-            s.winter.lastOutcome = "You return empty and freezing.";
-          } else {
-            s.hunger = Math.max(0, s.hunger - 13);
-            s.foodStockpile = Math.max(0, s.foodStockpile - 1);
-            s.predatorAwarenessTimer = Math.max(0, s.predatorAwarenessTimer - 0.6);
-            s.winter.lastOutcome = "A predator drives you back and you lose supplies.";
-          }
+          s.winter.slowStartPending = true;
         },
       },
     ],
   };
+}
+
+function applyWinterStructuralConsequences(state, transitionInfo) {
+  const modifier = state.winter.pendingGrowthDamBreaks;
+  if (modifier === 0) return;
+
+  if (modifier < 0 && transitionInfo.driftBrokenTiles.length > 0) {
+    const restoredCount = Math.min(-modifier, transitionInfo.driftBrokenTiles.length);
+    for (let i = 0; i < restoredCount; i += 1) {
+      state.resources.damTiles.push(transitionInfo.driftBrokenTiles[i]);
+    }
+    transitionInfo.driftBrokenTiles.splice(0, restoredCount);
+    state.winter.lastOutcome =
+      "Your winter repairs held. " + restoredCount + " drift break points were prevented.";
+    return;
+  }
+
+  if (modifier > 0) {
+    const extraDamage = applyClusterDamDamageByCount(state.resources.damTiles, modifier, 2);
+    state.resources.damTiles = extraDamage.remainingTiles;
+    if (extraDamage.brokenTiles.length > 0) {
+      addDamBreakMarkers(state, extraDamage.brokenTiles, "winter_consequence");
+      state.winter.winterDamageWorsened = true;
+      state.winter.lastOutcome = "Winter damage worsened the dam.";
+    }
+  }
 }
